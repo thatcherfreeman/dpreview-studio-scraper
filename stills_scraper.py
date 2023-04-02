@@ -80,6 +80,7 @@ def make_post_request(payload: Dict[str, str]) -> Dict:
     request = requests.Request(
         "POST", post_url, headers=headers, data=payload
     ).prepare()
+    time.sleep(0.5)
     response = s.send(request)
     while response.status_code == 429:
         print("Got status code 429, retrying in 1m...")
@@ -118,7 +119,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     num_downloads = 0
-    for lighting in ["Daylight", "Lowlight"]:
+
+    response_dict = make_post_request(get_payload())
+    lighting_scenarios = [
+        value["clientValue"] for value in response_dict["attributes"][0]["values"]
+    ]
+    for lighting in lighting_scenarios:
         print(lighting)
         response_dict = make_post_request(get_payload(lighting))
         camera_list = [
@@ -163,7 +169,7 @@ if __name__ == "__main__":
                         originalUrlKey, os.path.join(directory, f"iso{iso}.{extension}")
                     )
 
-                    with open(os.path.join(directory, f"iso{iso}_info.txt"), "w") as f:
+                    with open(os.path.join(directory, f"iso{iso}_{format.lower()}_info.txt"), "w") as f:
                         f.write(response_dict["images"][0]["infoText"])
                     num_downloads += 1
                     if args.num_images > 0 and num_downloads >= args.num_images:
