@@ -1,7 +1,3 @@
-# from selenium import webdriver
-# from selenium.webdriver.common.keys import Keys
-# from selenium.webdriver.common.by import By
-from seleniumrequests import Firefox
 import json
 from typing import List, Dict, Tuple, Optional
 import requests
