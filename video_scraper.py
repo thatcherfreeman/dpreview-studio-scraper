@@ -4,7 +4,7 @@ import requests
 import sys, os, time
 from argparse import ArgumentParser
 
-from stills_scraper import make_post_request, download_file
+from stills_scraper import make_post_request, download_file, write_info
 
 
 def get_payload(
@@ -56,10 +56,15 @@ if __name__ == "__main__":
     num_downloads = 0
     response_dict = make_post_request(get_payload())
     camera_list = [
-        (value["displayValue"], value["clientValue"])
+        (value["displayValue"].split("/")[0].strip(), value["clientValue"])
         for value in response_dict["attributes"][0]["values"]
     ]
     for camera_display, camera in camera_list:
+        directory = os.path.join("downloads", "video", camera_display)
+        if os.path.exists(directory):
+            print(f"Skipping {camera_display}")
+            continue
+
         print(camera_display)
         # get formats for this camera.
         response_dict = make_post_request(get_payload(camera))
@@ -69,17 +74,19 @@ if __name__ == "__main__":
         for format_str in formats_list:
             print(format_str)
             response_dict = make_post_request(get_payload(camera, format_str))
-            directory = os.path.join("downloads", "video", camera_display)
             originalUrlKey = response_dict["images"][0]["originalUrl"]
             s3key = originalUrlKey.split("s3Key=")[-1]
             extension = s3key.split(".")[-1]
 
             os.makedirs(directory, exist_ok=True)
-            download_file(
+            if download_file(
                 originalUrlKey, os.path.join(directory, f"{format_str}.{extension}")
-            )
-            with open(os.path.join(directory, f"{format_str}_info.txt"), "w") as f:
-                f.write(response_dict["images"][0]["infoText"])
+            ):
+                write_info(
+                    response_dict["images"][0]["infoText"],
+                    os.path.join(directory, f"{format_str}_info.txt"),
+                )
+
             num_downloads += 1
             if args.num_images > 0 and num_downloads >= args.num_images:
                 print(f"Saved {num_downloads} images. Exiting.")

@@ -44,21 +44,21 @@ def get_payload(
             "instanceId": 126,
             "value": None,
             "isSet": False,
-            "allowDefaultIfUnset": False,
+            "allowDefaultIfUnset": True,
             "isFixed": False,
         },
         {
             "instanceId": 171,
             "value": None,
             "isSet": False,
-            "allowDefaultIfUnset": False,
+            "allowDefaultIfUnset": True,
             "isFixed": False,
         },
         {
             "instanceId": 199,
             "value": None,
             "isSet": False,
-            "allowDefaultIfUnset": False,
+            "allowDefaultIfUnset": True,
             "isFixed": False,
         },
     ]
@@ -82,8 +82,8 @@ def make_post_request(payload: Dict[str, str]) -> Dict:
     ).prepare()
     time.sleep(0.5)
     response = s.send(request)
-    while response.status_code == 429:
-        print("Got status code 429, retrying in 1m...")
+    while response.status_code in (504, 429):
+        print(f"Got status code {response.status_code}, retrying in 1m...")
         time.sleep(60)
         response = s.send(request)
     assert response.status_code == 200, f"Got response code {response.status_code}"
@@ -91,7 +91,7 @@ def make_post_request(payload: Dict[str, str]) -> Dict:
     return response_dict
 
 
-def download_file(originalUrlKey, fn):
+def download_file(originalUrlKey, fn) -> bool:
     get_url = f"https://www.dpreview.com{originalUrlKey}"
     headers = {
         "User-Agent": "PostmanRuntime/7.31.3",
@@ -99,13 +99,25 @@ def download_file(originalUrlKey, fn):
     s = requests.Session()
     request = requests.Request("GET", get_url, headers=headers).prepare()
     response = s.send(request)
-    while response.status_code == 429:
-        print("Got status code 429, retrying in 1m...")
+    if response.status_code in (404,):
+        print(f"skipping {fn}, got response code {response.status_code}")
+        return False
+    while response.status_code in (504, 429):
+        print(f"Got status code {response.status_code}, retrying in 1m...")
         time.sleep(60)
         response = s.send(request)
     assert response.status_code == 200, f"Got response code {response.status_code}"
     with open(fn, "wb") as f:
         f.write(response.content)
+    return True
+
+
+def write_info(info: Optional[str], fn: str):
+    if info is None:
+        print(f"Skipping info {fn}")
+    else:
+        with open(fn, "w") as f:
+            f.write(info)
 
 
 if __name__ == "__main__":
@@ -128,10 +140,17 @@ if __name__ == "__main__":
         print(lighting)
         response_dict = make_post_request(get_payload(lighting))
         camera_list = [
-            (value["displayValue"], value["clientValue"])
+            (value["displayValue"].split("/")[0].strip(), value["clientValue"])
             for value in response_dict["attributes"][1]["values"]
         ]
         for camera_display, camera in camera_list:
+            camera_dir = os.path.join(
+                "downloads", "stills", lighting.lower(), camera_display
+            )
+            if os.path.exists(camera_dir):
+                print(f"Skipping {camera_display}")
+                continue
+
             print(camera_display)
             # get formats for this camera.
             response_dict = make_post_request(get_payload(lighting, camera))
@@ -154,10 +173,7 @@ if __name__ == "__main__":
                         get_payload(lighting, camera, format_str, iso)
                     )
                     directory = os.path.join(
-                        "downloads",
-                        "stills",
-                        lighting.lower(),
-                        camera_display,
+                        camera_dir,
                         format_str.lower(),
                     )
                     originalUrlKey = response_dict["images"][0]["originalUrl"]
@@ -165,12 +181,16 @@ if __name__ == "__main__":
                     extension = s3key.split(".")[-1]
 
                     os.makedirs(directory, exist_ok=True)
-                    download_file(
+                    if download_file(
                         originalUrlKey, os.path.join(directory, f"iso{iso}.{extension}")
-                    )
+                    ):
+                        write_info(
+                            response_dict["images"][0]["infoText"],
+                            os.path.join(
+                                directory, f"iso{iso}_{format_str.lower()}_info.txt"
+                            ),
+                        )
 
-                    with open(os.path.join(directory, f"iso{iso}_{format.lower()}_info.txt"), "w") as f:
-                        f.write(response_dict["images"][0]["infoText"])
                     num_downloads += 1
                     if args.num_images > 0 and num_downloads >= args.num_images:
                         print(f"Saved {num_downloads} images. Exiting.")
