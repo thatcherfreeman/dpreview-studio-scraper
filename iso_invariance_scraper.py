@@ -76,7 +76,12 @@ if __name__ == "__main__":
         # get exposures for this camera.
         response_dict = make_post_request(get_payload(camera))
         exposures_list = [
-            (value["displayValue"].split("(")[0].split("/")[0].strip(), value["clientValue"]) for value in response_dict["attributes"][1]["values"] if value is not None
+            (
+                value["displayValue"].split("(")[0].split("/")[0].strip(),
+                value["clientValue"],
+            )
+            for value in response_dict["attributes"][1]["values"]
+            if value is not None
         ]
         for exposure_display, exposure in exposures_list:
             print(exposure_display)
@@ -88,14 +93,17 @@ if __name__ == "__main__":
                 shutter_list = [(None, None)]
             else:
                 shutter_list = [
-                    (value["displayValue"].strip(), value["clientValue"]) for value in response_dict["attributes"][2]["values"]
+                    (value["displayValue"].strip(), value["clientValue"])
+                    for value in response_dict["attributes"][2]["values"]
                 ]
             for shutter_display, shutter in shutter_list:
                 # Need to try all shutter options, if they exist.
                 file_directory = camera_directory
                 if shutter_display is not None and shutter is not None:
                     print(shutter_display)
-                    response_dict = make_post_request(get_payload(camera, exposure, shutter))
+                    response_dict = make_post_request(
+                        get_payload(camera, exposure, shutter)
+                    )
                     file_directory = os.path.join(camera_directory, shutter_display)
 
                 # In this API, the raws and JPEGs are provided simultaneously in originalUrl and displayImageUrl
@@ -106,17 +114,25 @@ if __name__ == "__main__":
                 raw_extension = raw_s3key.split(".")[-1]
                 raw_fn = f"{exposure_display}.{raw_extension}"
                 os.makedirs(file_directory, exist_ok=True)
-                downloaded_raw = download_file(raw_originalUrlKey, os.path.join(file_directory, raw_fn))
+                downloaded_raw = download_file(
+                    raw_originalUrlKey, os.path.join(file_directory, raw_fn)
+                )
 
                 # Download JPEG
                 jpg_urlKey = response_dict["images"][0]["displayImageUrl"]
                 jpg_s3key = jpg_urlKey.split("s3Key=")[-1]
                 jpg_extension = jpg_s3key.split(".")[-1]
                 jpg_fn = f"{exposure_display}.{jpg_extension}"
-                downloaded_jpg = download_file(jpg_urlKey, os.path.join(file_directory, jpg_fn))
+                downloaded_jpg = download_file(
+                    jpg_urlKey, os.path.join(file_directory, jpg_fn)
+                )
 
                 if downloaded_raw or downloaded_jpg:
-                    info_txt_fn = f"{exposure_display}_info.txt" if shutter_display is not None else f"{exposure_display}_info.txt"
+                    info_txt_fn = (
+                        f"{exposure_display}_info.txt"
+                        if shutter_display is not None
+                        else f"{exposure_display}_info.txt"
+                    )
                     write_info(
                         response_dict["images"][0]["infoText"],
                         os.path.join(file_directory, info_txt_fn),

@@ -1,6 +1,7 @@
 import json
 from typing import List, Dict, Tuple, Optional
 import requests
+from urllib3.exceptions import ProtocolError
 import sys, os, time
 from argparse import ArgumentParser
 
@@ -71,6 +72,31 @@ def get_payload(
     return {"data": json.dumps(post_payload, separators=(",", ":"))}
 
 
+def send_request(
+    session: requests.Session, request: requests.PreparedRequest, max_failures: int = 20
+) -> requests.Response:
+    success = False
+    num_failures = 0
+    while not success:
+        try:
+            response = session.send(request)
+            success = response.status_code in (200, 404)
+            if response.status_code in (504, 429):
+                print(f"Got status code {response.status_code}, retrying in 1m...")
+                num_failures += 1
+                time.sleep(60)
+            if not success:
+                num_failures += 1
+        except ProtocolError as e:
+            print("Got ProtocolError... Retrying in 1m")
+            num_failures += 1
+            time.sleep(60)
+
+        if num_failures > max_failures:
+            raise Exception(f"Failed to execute request {request}!")
+    return response
+
+
 def make_post_request(payload: Dict[str, str]) -> Dict:
     post_url = "https://www.dpreview.com/reviews/image-comparison/get-images"
     headers = {
@@ -81,11 +107,7 @@ def make_post_request(payload: Dict[str, str]) -> Dict:
         "POST", post_url, headers=headers, data=payload
     ).prepare()
     time.sleep(0.5)
-    response = s.send(request)
-    while response.status_code in (504, 429):
-        print(f"Got status code {response.status_code}, retrying in 1m...")
-        time.sleep(60)
-        response = s.send(request)
+    response = send_request(s, request)
     assert response.status_code == 200, f"Got response code {response.status_code}"
     response_dict = json.loads(response.text)
     return response_dict
@@ -98,14 +120,12 @@ def download_file(originalUrlKey, fn) -> bool:
     }
     s = requests.Session()
     request = requests.Request("GET", get_url, headers=headers).prepare()
-    response = s.send(request)
+    response = send_request(s, request)
+
     if response.status_code in (404,):
         print(f"skipping {fn}, got response code {response.status_code}")
         return False
-    while response.status_code in (504, 429):
-        print(f"Got status code {response.status_code}, retrying in 1m...")
-        time.sleep(60)
-        response = s.send(request)
+
     assert response.status_code == 200, f"Got response code {response.status_code}"
     with open(fn, "wb") as f:
         f.write(response.content)
